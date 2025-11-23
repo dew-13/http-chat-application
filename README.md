@@ -65,7 +65,7 @@ cd ~/chat-app
 
 # Download files from GitHub
 # Option 1: Clone the repository
-git clone https://github.com/dew-13/http-chat-application.git
+git clone https://github.com/dew-13/Cloud_Hosted_Chat_Application.git
 cd http-chat-application
 
 # Option 2: Create files manually (copy from repository)
