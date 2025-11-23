@@ -1,0 +1,344 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP Chat Application</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 90%;
+            max-width: 800px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px 15px 0 0;
+            text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .server-info { font-size: 11px; opacity: 0.9; }
+        .chat-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f5f5f5;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            border-radius: 10px;
+            max-width: 70%;
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message.local {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .message.remote {
+            background: white;
+            color: #333;
+            margin-right: auto;
+            border: 1px solid #ddd;
+        }
+        .message-header {
+            font-weight: bold;
+            font-size: 12px;
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+        .message-content {
+            font-size: 14px;
+            word-wrap: break-word;
+        }
+        .message-time {
+            font-size: 10px;
+            margin-top: 5px;
+            opacity: 0.7;
+        }
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-radius: 0 0 15px 15px;
+            border-top: 1px solid #ddd;
+        }
+        .config-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .config-row input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .message-row { display: flex; gap: 10px; }
+        #messageInput {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+        }
+        #messageInput:focus { border-color: #667eea; }
+        button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: scale(1.05); }
+        button:active { transform: scale(0.95); }
+        .status {
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        .error { color: #e74c3c; font-weight: bold; }
+        .success { color: #27ae60; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💬 HTTP Chat Application</h1>
+            <div class="server-info" id="serverInfo">Configuring...</div>
+        </div>
+        
+        <div class="chat-area" id="chatArea">
+            <div class="status">⚠️ Please enter your username and remote server IP below to start chatting!</div>
+        </div>
+        
+        <div class="input-area">
+            <div class="config-row">
+                <input type="text" id="usernameInput" placeholder="Your Username (e.g., Alice or Bob)" value="">
+                <input type="text" id="remoteServerInput" placeholder="Remote Server IP:Port (e.g., 54.234.56.78:5000)">
+            </div>
+            <div class="message-row">
+                <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="if(event.key==='Enter') sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let username = '';
+        let remoteServer = '';
+        let localServer = window.location.origin;
+        let pollInterval = null;
+        
+        // Update server info display
+        document.getElementById('serverInfo').textContent = `Local Server: ${localServer}`;
+        
+        // Send message to BOTH local and remote servers
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            // Get current username and remote server
+            username = document.getElementById('usernameInput').value.trim();
+            remoteServer = document.getElementById('remoteServerInput').value.trim();
+            
+            // Validation
+            if (!username) {
+                alert('Please enter your username!');
+                document.getElementById('usernameInput').focus();
+                return;
+            }
+            
+            if (!remoteServer) {
+                alert('Please enter remote server IP:Port!');
+                document.getElementById('remoteServerInput').focus();
+                return;
+            }
+            
+            if (!message) {
+                return;
+            }
+            
+            const messageData = {
+                username: username,
+                message: message
+            };
+            
+            try {
+                // Send to LOCAL server
+                console.log('Sending to local server:', localServer);
+                const localResponse = await fetch(`${localServer}/send`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(messageData)
+                });
+                
+                if (!localResponse.ok) {
+                    console.error('Local send failed:', localResponse.status);
+                }
+                
+                // Send to REMOTE server
+                const remoteUrl = remoteServer.startsWith('http') 
+                    ? remoteServer 
+                    : `http://${remoteServer}`;
+                
+                console.log('Sending to remote server:', remoteUrl);
+                const remoteResponse = await fetch(`${remoteUrl}/send`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(messageData)
+                });
+                
+                if (!remoteResponse.ok) {
+                    console.error('Remote send failed:', remoteResponse.status);
+                }
+                
+                // Clear input and fetch messages
+                messageInput.value = '';
+                fetchMessages();
+                
+            } catch (error) {
+                console.error('Send error:', error);
+                showStatus(`Error sending message: ${error.message}`, 'error');
+            }
+        }
+        
+        // Fetch messages from BOTH servers and merge them
+        async function fetchMessages() {
+            try {
+                let allMessages = [];
+                
+                // Fetch from LOCAL server
+                const localResponse = await fetch(`${localServer}/messages`);
+                const localMessages = await localResponse.json();
+                console.log('Local messages:', localMessages.length);
+                allMessages = [...localMessages];
+                
+                // Fetch from REMOTE server (if configured)
+                remoteServer = document.getElementById('remoteServerInput').value.trim();
+                if (remoteServer) {
+                    try {
+                        const remoteUrl = remoteServer.startsWith('http') 
+                            ? remoteServer 
+                            : `http://${remoteServer}`;
+                        
+                        const remoteResponse = await fetch(`${remoteUrl}/messages`);
+                        const remoteMessages = await remoteResponse.json();
+                        console.log('Remote messages:', remoteMessages.length);
+                        
+                        // Merge messages (avoid duplicates)
+                        remoteMessages.forEach(msg => {
+                            const isDuplicate = allMessages.some(m => 
+                                m.username === msg.username && 
+                                m.message === msg.message && 
+                                m.timestamp === msg.timestamp
+                            );
+                            if (!isDuplicate) {
+                                allMessages.push(msg);
+                            }
+                        });
+                    } catch (remoteError) {
+                        console.error('Could not fetch from remote server:', remoteError);
+                    }
+                }
+                
+                // Sort by timestamp
+                allMessages.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+                
+                console.log('Total messages after merge:', allMessages.length);
+                displayMessages(allMessages);
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+            }
+        }
+        
+        // Display messages in chat area
+        function displayMessages(messages) {
+            const chatArea = document.getElementById('chatArea');
+            chatArea.innerHTML = '';
+            
+            username = document.getElementById('usernameInput').value.trim();
+            
+            if (messages.length === 0) {
+                chatArea.innerHTML = '<div class="status">No messages yet. Start the conversation!</div>';
+                return;
+            }
+            
+            messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                const isLocal = msg.username === username;
+                messageDiv.className = `message ${isLocal ? 'local' : 'remote'}`;
+                
+                messageDiv.innerHTML = `
+                    <div class="message-header">${escapeHtml(msg.username)}</div>
+                    <div class="message-content">${escapeHtml(msg.message)}</div>
+                    <div class="message-time">${msg.timestamp}</div>
+                `;
+                
+                chatArea.appendChild(messageDiv);
+            });
+            
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+        
+        // Show status message
+        function showStatus(message, type) {
+            const chatArea = document.getElementById('chatArea');
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            chatArea.appendChild(statusDiv);
+            setTimeout(() => statusDiv.remove(), 3000);
+        }
+        
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Start polling for new messages every 2 seconds
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(fetchMessages, 2000);
+        }
+        
+        // Initialize
+        fetchMessages();
+        startPolling();
+        
+        console.log('Chat application loaded. Local server:', localServer);
+    </script>
+</body>
+</html>
