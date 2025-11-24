@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,8 +124,6 @@
             font-size: 12px;
             color: #666;
         }
-        .error { color: #e74c3c; font-weight: bold; }
-        .success { color: #27ae60; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -157,20 +154,18 @@
         let remoteServer = '';
         let localServer = window.location.origin;
         let pollInterval = null;
+        let lastMessageCount = 0;  // Track message count to prevent unnecessary redraws
+        let displayedMessages = []; // Keep track of what's already displayed
         
-        // Update server info display
         document.getElementById('serverInfo').textContent = `Local Server: ${localServer}`;
         
-        // Send message to BOTH local and remote servers
         async function sendMessage() {
             const messageInput = document.getElementById('messageInput');
             const message = messageInput.value.trim();
             
-            // Get current username and remote server
             username = document.getElementById('usernameInput').value.trim();
             remoteServer = document.getElementById('remoteServerInput').value.trim();
             
-            // Validation
             if (!username) {
                 alert('Please enter your username!');
                 document.getElementById('usernameInput').focus();
@@ -183,76 +178,49 @@
                 return;
             }
             
-            if (!message) {
-                return;
-            }
+            if (!message) return;
             
-            const messageData = {
-                username: username,
-                message: message
-            };
+            const messageData = { username: username, message: message };
             
             try {
-                // Send to LOCAL server
-                console.log('Sending to local server:', localServer);
-                const localResponse = await fetch(`${localServer}/send`, {
+                // Send to both servers
+                await fetch(`${localServer}/send`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(messageData)
                 });
                 
-                if (!localResponse.ok) {
-                    console.error('Local send failed:', localResponse.status);
-                }
-                
-                // Send to REMOTE server
-                const remoteUrl = remoteServer.startsWith('http') 
-                    ? remoteServer 
-                    : `http://${remoteServer}`;
-                
-                console.log('Sending to remote server:', remoteUrl);
-                const remoteResponse = await fetch(`${remoteUrl}/send`, {
+                const remoteUrl = remoteServer.startsWith('http') ? remoteServer : `http://${remoteServer}`;
+                await fetch(`${remoteUrl}/send`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(messageData)
                 });
                 
-                if (!remoteResponse.ok) {
-                    console.error('Remote send failed:', remoteResponse.status);
-                }
-                
-                // Clear input and fetch messages
                 messageInput.value = '';
                 fetchMessages();
                 
             } catch (error) {
                 console.error('Send error:', error);
-                showStatus(`Error sending message: ${error.message}`, 'error');
             }
         }
         
-        // Fetch messages from BOTH servers and merge them
         async function fetchMessages() {
             try {
                 let allMessages = [];
                 
-                // Fetch from LOCAL server
+                // Fetch from local server
                 const localResponse = await fetch(`${localServer}/messages`);
                 const localMessages = await localResponse.json();
-                console.log('Local messages:', localMessages.length);
                 allMessages = [...localMessages];
                 
-                // Fetch from REMOTE server (if configured)
+                // Fetch from remote server if configured
                 remoteServer = document.getElementById('remoteServerInput').value.trim();
                 if (remoteServer) {
                     try {
-                        const remoteUrl = remoteServer.startsWith('http') 
-                            ? remoteServer 
-                            : `http://${remoteServer}`;
-                        
+                        const remoteUrl = remoteServer.startsWith('http') ? remoteServer : `http://${remoteServer}`;
                         const remoteResponse = await fetch(`${remoteUrl}/messages`);
                         const remoteMessages = await remoteResponse.json();
-                        console.log('Remote messages:', remoteMessages.length);
                         
                         // Merge messages (avoid duplicates)
                         remoteMessages.forEach(msg => {
@@ -266,27 +234,51 @@
                             }
                         });
                     } catch (remoteError) {
-                        console.error('Could not fetch from remote server:', remoteError);
+                        console.error('Remote fetch error:', remoteError);
                     }
                 }
                 
                 // Sort by timestamp
                 allMessages.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
                 
-                console.log('Total messages after merge:', allMessages.length);
-                displayMessages(allMessages);
+                // ONLY update display if there are new messages
+                if (allMessages.length !== lastMessageCount || hasNewMessages(allMessages)) {
+                    lastMessageCount = allMessages.length;
+                    displayedMessages = allMessages;
+                    displayMessages(allMessages);
+                }
                 
             } catch (error) {
                 console.error('Fetch error:', error);
             }
         }
         
-        // Display messages in chat area
+        // Check if there are actually new messages (not just same count)
+        function hasNewMessages(newMessages) {
+            if (displayedMessages.length !== newMessages.length) return true;
+            
+            for (let i = 0; i < newMessages.length; i++) {
+                const newMsg = newMessages[i];
+                const oldMsg = displayedMessages[i];
+                
+                if (!oldMsg || 
+                    newMsg.username !== oldMsg.username || 
+                    newMsg.message !== oldMsg.message || 
+                    newMsg.timestamp !== oldMsg.timestamp) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
         function displayMessages(messages) {
             const chatArea = document.getElementById('chatArea');
-            chatArea.innerHTML = '';
-            
             username = document.getElementById('usernameInput').value.trim();
+            
+            // Save scroll position
+            const wasScrolledToBottom = chatArea.scrollHeight - chatArea.clientHeight <= chatArea.scrollTop + 1;
+            
+            chatArea.innerHTML = '';
             
             if (messages.length === 0) {
                 chatArea.innerHTML = '<div class="status">No messages yet. Start the conversation!</div>';
@@ -307,30 +299,21 @@
                 chatArea.appendChild(messageDiv);
             });
             
-            // Scroll to bottom
-            chatArea.scrollTop = chatArea.scrollHeight;
+            // Only auto-scroll if user was already at bottom
+            if (wasScrolledToBottom) {
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
         }
         
-        // Show status message
-        function showStatus(message, type) {
-            const chatArea = document.getElementById('chatArea');
-            const statusDiv = document.createElement('div');
-            statusDiv.className = `status ${type}`;
-            statusDiv.textContent = message;
-            chatArea.appendChild(statusDiv);
-            setTimeout(() => statusDiv.remove(), 3000);
-        }
-        
-        // Escape HTML to prevent XSS
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
         
-        // Start polling for new messages every 2 seconds
         function startPolling() {
             if (pollInterval) clearInterval(pollInterval);
+            // Poll every 2 seconds
             pollInterval = setInterval(fetchMessages, 2000);
         }
         
